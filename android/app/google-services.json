@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "952918330555",
+    "project_id": "watchtower-dev-8c0f7",
+    "storage_bucket": "watchtower-dev-8c0f7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:952918330555:android:0fd3ed52df7f496913ed9e",
+        "android_client_info": {
+          "package_name": "com.example.project_1"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "952918330555-gfuqg0f53d47p1vmv4ci3s5i0r0peaa9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.project_1",
+            "certificate_hash": "be7237724f87b8d22d24299392dcc223c9069c02"
+          }
+        },
+        {
+          "client_id": "952918330555-3v6apf7a9ekjq2agumu5kiuscsg2ag45.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAi8eqhR1VmFw3DnFEVXpYPGVZfWvhY6zg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "952918330555-3v6apf7a9ekjq2agumu5kiuscsg2ag45.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "952918330555-hjgk83707a4natk9csl9dgbctsa9h5pu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.project1"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
