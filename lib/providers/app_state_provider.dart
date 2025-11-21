@@ -33,10 +33,20 @@ class AppStateProvider extends ChangeNotifier {
       await _loadPreferences();
       
       // Check if user has completed onboarding
-      // Always show onboarding on app start/restart per product requirement.
-      // We intentionally ignore any saved 'has_completed_onboarding' flag so
-      // the onboarding screen is presented each time the app launches.
-      _appState = AppState.onboarding;
+      final prefs = await SharedPreferences.getInstance();
+      final hasCompletedOnboarding = prefs.getBool('has_completed_onboarding') ?? false;
+      final isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+      
+      if (!hasCompletedOnboarding) {
+        // User hasn't gone through onboarding yet
+        _appState = AppState.onboarding;
+      } else if (isLoggedIn) {
+        // User has completed onboarding and is logged in
+        _appState = AppState.main;
+      } else {
+        // User has completed onboarding but not logged in
+        _appState = AppState.auth;
+      }
     } catch (e) {
       debugPrint('Error initializing app: $e');
       _appState = AppState.onboarding;

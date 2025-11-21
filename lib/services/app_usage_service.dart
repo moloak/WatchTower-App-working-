@@ -197,58 +197,57 @@ class AppUsageService {
   Future<void> _updateUsageStats() async {
     try {
       final now = DateTime.now();
-      final startOfDay = DateTime(now.year, now.month, now.day);
-      final endOfDay = startOfDay.add(const Duration(days: 1));
+      
+      for (final packageName in _monitoredApps.keys) {
+        final app = _monitoredApps[packageName]!;
+        // Query usage from when monitoring was triggered for this app
+        final usageStats = await UsageStats.queryUsageStats(
+          app.monitoringStartTime,
+          now,
+        );
 
-      final usageStats = await UsageStats.queryUsageStats(
-        startOfDay,
-        endOfDay,
-      );
+        if (debugLogging) {
+          debugPrint('[AppUsageService] _updateUsageStats: queried ${app.monitoringStartTime.toIso8601String()} -> ${now.toIso8601String()} for ${app.packageName}, found ${usageStats.length} records');
+        }
 
-      if (debugLogging) {
-  debugPrint('[AppUsageService] _updateUsageStats: queried ${startOfDay.toIso8601String()} -> ${endOfDay.toIso8601String()}, found ${usageStats.length} records');
-        // Print a few samples for debugging
-        final sample = usageStats.take(10).map((s) => '${s.packageName}:${s.totalTimeInForeground}').join(', ');
-  debugPrint('[AppUsageService] sample stats: $sample');
-      }
-
-      for (final stat in usageStats) {
-        if (stat.packageName != null && _monitoredApps.containsKey(stat.packageName)) {
-          final app = _monitoredApps[stat.packageName!]!;
-          // The usage_stats plugin may return totalTimeInForeground as an int or a String
-          // depending on platform/plugin version. Handle both safely.
-          int millis = 0;
-          try {
-            final dynamic raw = stat.totalTimeInForeground;
-            if (raw is int) {
-              millis = raw;
-            } else if (raw is String) {
-              millis = int.tryParse(raw) ?? 0;
-            } else {
-              millis = int.tryParse(raw.toString()) ?? 0;
+        for (final stat in usageStats) {
+          if (stat.packageName == packageName) {
+            // The usage_stats plugin may return totalTimeInForeground as an int or a String
+            // depending on platform/plugin version. Handle both safely.
+            int millis = 0;
+            try {
+              final dynamic raw = stat.totalTimeInForeground;
+              if (raw is int) {
+                millis = raw;
+              } else if (raw is String) {
+                millis = int.tryParse(raw) ?? 0;
+              } else {
+                millis = int.tryParse(raw.toString()) ?? 0;
+              }
+            } catch (_) {
+              millis = 0;
             }
-          } catch (_) {
-            millis = 0;
-          }
-          final currentUsage = Duration(milliseconds: millis);
-          final updatedApp = app.copyWith(
-            currentUsage: currentUsage,
-            lastUsed: now,
-          );
+            final currentUsage = Duration(milliseconds: millis);
+            final updatedApp = app.copyWith(
+              currentUsage: currentUsage,
+              lastUsed: now,
+            );
 
-          _monitoredApps[stat.packageName!] = updatedApp;
+            _monitoredApps[packageName] = updatedApp;
 
-          if (debugLogging) {
-            debugPrint('[AppUsageService] updated ${updatedApp.packageName} -> current=${updatedApp.currentUsage.inMinutes}m (${updatedApp.cappedUsagePercentage.toStringAsFixed(1)}%) remaining=${updatedApp.remainingTime.inMinutes}m');
-          }
+            if (debugLogging) {
+              debugPrint('[AppUsageService] updated ${updatedApp.packageName} -> current=${updatedApp.currentUsage.inMinutes}m (${updatedApp.cappedUsagePercentage.toStringAsFixed(1)}%) remaining=${updatedApp.remainingTime.inMinutes}m');
+            }
 
-          // Persist the daily usage locally so we can summarize later.
-          try {
-            final dateStr = '${startOfDay.year.toString().padLeft(4, '0')}-${startOfDay.month.toString().padLeft(2, '0')}-${startOfDay.day.toString().padLeft(2, '0')}';
-            await LocalUsageStorage.instance.saveDailyUsage(dateStr, updatedApp);
-          } catch (e) {
-            // ignore: avoid_print
-            debugPrint('Failed to persist daily usage: $e');
+            // Persist the daily usage locally so we can summarize later.
+            try {
+              final dateStr = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+              await LocalUsageStorage.instance.saveDailyUsage(dateStr, updatedApp);
+            } catch (e) {
+              // ignore: avoid_print
+              debugPrint('Failed to persist daily usage: $e');
+            }
+            break;
           }
         }
       }
@@ -316,8 +315,15 @@ class AppUsageService {
       final app = _monitoredApps[packageName]!;
       final maxLimit = const Duration(hours: 12);
       final capped = newLimit > maxLimit ? maxLimit : newLimit;
-      _monitoredApps[packageName] = app.copyWith(dailyLimit: capped);
+      // Reset notification flags when limit is updated so new notifications can be triggered
+      _monitoredApps[packageName] = app.copyWith(
+        dailyLimit: capped,
+        notified30: false,
+        notified60: false,
+        notified90: false,
+      );
       _usageController.add(_monitoredApps);
+      debugPrint('Updated app limit for $packageName to ${capped.inMinutes}m and reset notification flags');
     }
   }
 
@@ -327,16 +333,38 @@ class AppUsageService {
       _monitoredApps[packageName] = app.copyWith(
         currentUsage: Duration.zero,
         lastUsed: DateTime.now(),
-        // Reset notification & lock state each day
+        // Reset notification state each day
         notified30: false,
         notified60: false,
         notified90: false,
-        isLocked: false,
-        overshotDuration: Duration.zero,
-        lockStartTime: null,
       );
     }
     _usageController.add(_monitoredApps);
+  }
+
+  /// Get the package name of the app currently in foreground
+  /// Returns the package name of the most recently used app in the last minute
+  Future<String?> getCurrentForegroundApp() async {
+    try {
+      if (Platform.isAndroid) {
+        final now = DateTime.now();
+        final from = now.subtract(const Duration(minutes: 1));
+        final stats = await UsageStats.queryUsageStats(from, now);
+        
+        if (stats.isEmpty) return null;
+        
+        // Since UsageStats doesn't directly expose lastTimeUsed,
+        // we'll query a very short time window and assume the most recent stat
+        // is the current foreground app. UsageStats should return apps in reverse
+        // chronological order, so we take the first one.
+        if (stats.isNotEmpty) {
+          return stats.first.packageName;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting foreground app: $e');
+    }
+    return null;
   }
 
   /// Mark notification/lock state for a monitored app. This is used by the
@@ -347,9 +375,6 @@ class AppUsageService {
     bool? notified30,
     bool? notified60,
     bool? notified90,
-    bool? isLocked,
-    Duration? overshotDuration,
-    DateTime? lockStartTime,
   }) async {
     try {
       if (!_monitoredApps.containsKey(packageName)) return;
@@ -358,9 +383,6 @@ class AppUsageService {
         notified30: notified30 ?? app.notified30,
         notified60: notified60 ?? app.notified60,
         notified90: notified90 ?? app.notified90,
-        isLocked: isLocked ?? app.isLocked,
-        overshotDuration: overshotDuration ?? app.overshotDuration,
-        lockStartTime: lockStartTime ?? app.lockStartTime,
       );
 
       _monitoredApps[packageName] = updated;
@@ -435,13 +457,49 @@ class AppUsageService {
   }
 
   /// Debug helper: force-update an app's current usage value. This is
+  /// Intelligently reset notification flags based on new usage percentage.
+  /// When usage is updated, we should notify only for thresholds that haven't been hit yet.
+  /// For example, if current usage is 50%, we should reset flags for 60% and 90% so those
+  /// notifications can be shown next time we reach those percentages.
+  Map<String, bool> _calculateNotificationFlagsForUsage(AppUsageModel app, Duration newUsage) {
+    final newPercentage = (newUsage.inSeconds / app.dailyLimit.inSeconds * 100).clamp(0.0, 100.0);
+    
+    // Determine which thresholds are still ahead of current usage
+    final shouldNotify30 = newPercentage >= 30;
+    final shouldNotify60 = newPercentage >= 60;
+    final shouldNotify90 = newPercentage >= 90;
+    
+    // If a threshold hasn't been hit yet, reset its flag so we can notify
+    final resetNotified30 = !shouldNotify30 ? false : (newPercentage < 60 ? app.notified30 : true);
+    final resetNotified60 = !shouldNotify60 ? false : (newPercentage < 90 ? app.notified60 : true);
+    final resetNotified90 = !shouldNotify90 ? false : app.notified90;
+    
+    debugPrint('_calculateNotificationFlagsForUsage: ${app.packageName} usage=${newPercentage.toStringAsFixed(1)}% flags: notified30=$resetNotified30, notified60=$resetNotified60, notified90=$resetNotified90');
+    
+    return {
+      'notified30': resetNotified30,
+      'notified60': resetNotified60,
+      'notified90': resetNotified90,
+    };
+  }
+
   /// intended for developer testing only so we can simulate thresholds.
   Future<void> forceSetCurrentUsage(String packageName, Duration usage) async {
     try {
       if (!_monitoredApps.containsKey(packageName)) return;
       final now = DateTime.now();
       final app = _monitoredApps[packageName]!;
-      final updated = app.copyWith(currentUsage: usage, lastUsed: now);
+      
+      // Intelligently reset notification flags based on new usage
+      final notificationFlags = _calculateNotificationFlagsForUsage(app, usage);
+      
+      final updated = app.copyWith(
+        currentUsage: usage,
+        lastUsed: now,
+        notified30: notificationFlags['notified30'] as bool,
+        notified60: notificationFlags['notified60'] as bool,
+        notified90: notificationFlags['notified90'] as bool,
+      );
       _monitoredApps[packageName] = updated;
       _usageController.add(_monitoredApps);
 

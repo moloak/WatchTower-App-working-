@@ -194,133 +194,150 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       );
     }
-    final totalUsage = usageProvider.getTotalDailyUsage();
-    final hours = totalUsage.inHours;
-    final minutes = totalUsage.inMinutes % 60;
     
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return StreamBuilder<Map<String, AppUsageModel>>(
+      stream: usageProvider.usageStream,
+      initialData: usageProvider.monitoredApps,
+      builder: (context, snapshot) {
+        final apps = snapshot.data ?? usageProvider.monitoredApps;
+        final totalUsage = apps.values.fold<Duration>(
+          Duration.zero,
+          (total, app) => total + app.currentUsage,
+        );
+        final hours = totalUsage.inHours;
+        final minutes = totalUsage.inMinutes % 60;
+        
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.analytics,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  'Today\'s Usage',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${hours}h ${minutes}m',
-                        style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      Text(
-                        'Total screen time',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withAlpha((0.1 * 255).round()),
-                    borderRadius: BorderRadius.circular(40),
-                  ),
-                  child: Center(
-                    child: Text(
-                      '${usageProvider.monitoredApps.length}',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                Row(
+                  children: [
+                    Icon(
+                      Icons.analytics,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Today\'s Usage',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${hours}h ${minutes}m',
+                            style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          Text(
+                            'Total screen time',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary.withAlpha((0.1 * 255).round()),
+                        borderRadius: BorderRadius.circular(40),
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${apps.length}',
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Monitored Apps',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[600],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Monitored Apps',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[600],
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildMonitoredAppsSection(UsageProvider usageProvider) {
-    final apps = usageProvider.monitoredApps.values.toList();
-    
-    if (apps.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Icon(
-                Icons.apps,
-                size: 48,
-                color: Colors.grey[400],
+    return StreamBuilder<Map<String, AppUsageModel>>(
+      stream: usageProvider.usageStream,
+      initialData: usageProvider.monitoredApps,
+      builder: (context, snapshot) {
+        final apps = snapshot.data?.values.toList() ?? [];
+        
+        if (apps.isEmpty) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.apps,
+                    size: 48,
+                    color: Colors.grey[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No apps being monitored',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add apps to start tracking your digital wellness',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.grey[500],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'No apps being monitored',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Add apps to start tracking your digital wellness',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.grey[500],
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+            ),
+          );
+        }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Monitored Apps',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 16),
-        ...apps.map((app) => _buildAppUsageCard(app)),
-      ],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Monitored Apps',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...apps.map((app) => _buildAppUsageCard(app)),
+          ],
+        );
+      },
     );
   }
 

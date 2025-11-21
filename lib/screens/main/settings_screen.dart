@@ -433,7 +433,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              userProvider.logout();
+              userProvider.signOut();
               appState.logout();
               Navigator.pop(context);
             },

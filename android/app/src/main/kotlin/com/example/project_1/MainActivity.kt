@@ -35,12 +35,6 @@ class MainActivity : FlutterActivity() {
 					runOnUiThread { showOverlay(title, message, autoHide = true) }
 					result.success(null)
 				}
-				"showLock" -> {
-					val title = call.argument<String>("title") ?: "App Locked"
-					val message = call.argument<String>("message") ?: ""
-					runOnUiThread { showOverlay(title, message, autoHide = false) }
-					result.success(null)
-				}
 				"hideOverlay" -> {
 					runOnUiThread { hideOverlay() }
 					result.success(null)

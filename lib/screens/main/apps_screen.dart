@@ -259,6 +259,7 @@ class _AppsScreenState extends State<AppsScreen> {
 
   void _showAddAppDialog(InstalledApp app, UsageProvider usageProvider) {
     final timeController = TextEditingController();
+    final maxMinutes = 90;
     
     showDialog(
       context: context,
@@ -271,10 +272,11 @@ class _AppsScreenState extends State<AppsScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: timeController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Daily Limit (minutes)',
                 hintText: 'e.g., 60 for 1 hour',
-                border: OutlineInputBorder(),
+                helperText: 'Maximum: $maxMinutes minutes',
+                border: const OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
             ),
@@ -288,7 +290,7 @@ class _AppsScreenState extends State<AppsScreen> {
           ElevatedButton(
             onPressed: () {
               final minutes = int.tryParse(timeController.text);
-              if (minutes != null && minutes > 0) {
+              if (minutes != null && minutes > 0 && minutes <= maxMinutes) {
                 usageProvider.addAppToMonitoring(
                   app,
                   Duration(minutes: minutes),
@@ -298,6 +300,20 @@ class _AppsScreenState extends State<AppsScreen> {
                   SnackBar(
                     content: Text('${app.appName} added to monitoring'),
                     backgroundColor: Colors.green,
+                  ),
+                );
+              } else if (minutes != null && minutes > maxMinutes) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Maximum daily limit is $maxMinutes minutes'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid time between 1 and 90 minutes'),
+                    backgroundColor: Colors.red,
                   ),
                 );
               }
@@ -316,6 +332,7 @@ class _AppsScreenState extends State<AppsScreen> {
     final timeController = TextEditingController(
       text: appUsage.dailyLimit.inMinutes.toString(),
     );
+    final maxMinutes = 90;
     
     showDialog(
       context: context,
@@ -328,9 +345,10 @@ class _AppsScreenState extends State<AppsScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: timeController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'New Daily Limit (minutes)',
-                border: OutlineInputBorder(),
+                helperText: 'Maximum: $maxMinutes minutes',
+                border: const OutlineInputBorder(),
               ),
               keyboardType: TextInputType.number,
             ),
@@ -344,7 +362,7 @@ class _AppsScreenState extends State<AppsScreen> {
           ElevatedButton(
             onPressed: () {
               final minutes = int.tryParse(timeController.text);
-              if (minutes != null && minutes > 0) {
+              if (minutes != null && minutes > 0 && minutes <= maxMinutes) {
                 usageProvider.updateAppLimit(
                   app.packageName,
                   Duration(minutes: minutes),
@@ -354,6 +372,20 @@ class _AppsScreenState extends State<AppsScreen> {
                   SnackBar(
                     content: Text('${app.appName} limit updated'),
                     backgroundColor: Colors.green,
+                  ),
+                );
+              } else if (minutes != null && minutes > maxMinutes) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Maximum daily limit is $maxMinutes minutes'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid time between 1 and 90 minutes'),
+                    backgroundColor: Colors.red,
                   ),
                 );
               }

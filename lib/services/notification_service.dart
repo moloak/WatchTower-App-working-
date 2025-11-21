@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
@@ -59,16 +60,24 @@ class NotificationService {
     final body = _getWarningBody(app, level);
     final id = _getNotificationId(app.packageName, level);
 
-    const androidDetails = AndroidNotificationDetails(
+    // Configure Android notification to show on top of other apps with full screen intent
+    // This ensures the notification appears as a heads-up notification even when another app is in foreground
+    final androidDetails = AndroidNotificationDetails(
       'usage_warnings',
       'Usage Warning Notifications',
       channelDescription: 'Notifications for app usage warnings',
-      importance: Importance.high,
-      priority: Priority.high,
+      importance: Importance.max,
+      priority: Priority.max,
       showWhen: true,
+      fullScreenIntent: true,
+      enableVibration: true,
+      enableLights: true,
+      color: Colors.deepOrange,
+      onlyAlertOnce: false,
     );
 
-  await _notifications.show(id, title, body, NotificationDetails(android: androidDetails));
+    debugPrint('NotificationService: Showing heads-up notification for ${app.packageName} - $title: $body');
+    await _notifications.show(id, title, body, NotificationDetails(android: androidDetails));
   }
 
   Future<void> showAppLockNotification(AppUsageModel app) async {

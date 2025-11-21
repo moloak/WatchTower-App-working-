@@ -5,15 +5,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_usage_model.dart';
 import '../services/app_usage_service.dart';
 import '../services/local_usage_storage.dart';
-import '../services/overlay_service.dart';
 import '../services/notification_service.dart';
 import '../services/background_service.dart';
+import '../services/overlay_service.dart' show WarningLevel;
 
 class UsageProvider extends ChangeNotifier {
   final AppUsageService _usageService = AppUsageService();
   
   AppUsageService get usageService => _usageService;
-  final OverlayService _overlayService = OverlayService();
   final NotificationService _notificationService = NotificationService();
   
   Map<String, AppUsageModel> _monitoredApps = {};
@@ -21,11 +20,15 @@ class UsageProvider extends ChangeNotifier {
   bool _isMonitoring = false;
   bool _hasPermissions = false;
   StreamSubscription<Map<String, AppUsageModel>>? _usageSubscription;
+  Timer? _dailyResetTimer;
 
   Map<String, AppUsageModel> get monitoredApps => _monitoredApps;
   Map<String, Duration> get weeklyUsage => _weeklyUsage;
   bool get isMonitoring => _isMonitoring;
   bool get hasPermissions => _hasPermissions;
+  
+  /// Stream of usage updates for real-time UI rebuilds
+  Stream<Map<String, AppUsageModel>> get usageStream => _usageService.usageStream;
 
   UsageProvider() {
     _initializeUsageMonitoring();
@@ -33,6 +36,10 @@ class UsageProvider extends ChangeNotifier {
 
   Future<void> _initializeUsageMonitoring() async {
     _hasPermissions = await _usageService.hasUsagePermission();
+    
+    // Initialize and request notification permissions for threshold alerts
+    await _notificationService.initialize();
+    await _notificationService.requestNotificationPermission();
     
     // Initialize local storage (sqlite) and restore monitored apps from Firestore
     await LocalUsageStorage.instance.init();
@@ -45,6 +52,9 @@ class UsageProvider extends ChangeNotifier {
 
     // Load any previously persisted monitored apps for the current user first
     await loadMonitoredAppsFromFirestore();
+
+    // Set up daily reset timer
+    _setupDailyResetTimer();
 
     // Debug forcing removed for production builds - monitoring will follow
     // only apps explicitly added via the Manage Apps screen.
@@ -59,46 +69,8 @@ class UsageProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Listen for overlay events (locks, countdown completion, manual dismiss)
-    _overlayService.overlayStream.listen((event) async {
-      try {
-        if (event.type == OverlayEventType.appLock && event.app != null) {
-          // Record lock start time and set isLocked flag
-          await _usageService.markAppState(event.app!.packageName,
-              isLocked: true, lockStartTime: event.timestamp);
-        } else if (event.type == OverlayEventType.overlayHidden) {
-            // If an explicit packageName was provided by the platform, compute
-            // overshot only for that app. Otherwise fall back to clearing all
-            // currently locked apps (legacy behavior).
-            final now = DateTime.now();
-            final pkg = event.packageName;
-            if (pkg != null && _monitoredApps.containsKey(pkg)) {
-              final app = _monitoredApps[pkg]!;
-              final lockStart = app.lockStartTime ?? now;
-              final overshot = now.difference(lockStart);
-              final newOvershot = app.overshotDuration + overshot;
-              await _usageService.markAppState(app.packageName,
-                  isLocked: false, overshotDuration: newOvershot, lockStartTime: null);
-            } else {
-              for (final app in _monitoredApps.values.where((a) => a.isLocked)) {
-                final lockStart = app.lockStartTime ?? now;
-                final overshot = now.difference(lockStart);
-                final newOvershot = app.overshotDuration + overshot;
-                await _usageService.markAppState(app.packageName,
-                    isLocked: false, overshotDuration: newOvershot, lockStartTime: null);
-              }
-            }
-        } else if (event.type == OverlayEventType.countdownComplete && event.app != null) {
-          // Countdown finished -- show the app lock and record state
-          await _showAppLock(event.app!);
-          await _usageService.markAppState(event.app!.packageName,
-              isLocked: true, lockStartTime: DateTime.now());
-        }
-      } catch (e) {
-          // ignore overlay handling errors
-          debugPrint('Overlay event handling error: $e');
-      }
-    });
+    // Note: Overlay event listeners have been removed as overlays are no longer used.
+    // Only notifications are used for usage warnings.
   }
 
   Future<bool> requestPermissions() async {
@@ -109,6 +81,24 @@ class UsageProvider extends ChangeNotifier {
       await startMonitoring();
     }
     return _hasPermissions;
+  }
+
+  /// Setup a daily timer to reset usage at midnight each day
+  void _setupDailyResetTimer() {
+    _dailyResetTimer?.cancel();
+    
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+    final timeUntilMidnight = tomorrow.difference(now);
+    
+    _dailyResetTimer = Timer(timeUntilMidnight, () async {
+      // Reset at midnight
+      await resetDailyUsage();
+      debugPrint('UsageProvider: Daily reset executed at midnight');
+      
+      // Reschedule for next day
+      _setupDailyResetTimer();
+    });
   }
 
   Future<void> startMonitoring() async {
@@ -239,66 +229,56 @@ class UsageProvider extends ChangeNotifier {
   // debug helper removed
 
   Future<void> _checkUsageThresholds() async {
+    // Get the currently foreground app
+    final foregroundApp = await _usageService.getCurrentForegroundApp();
+    debugPrint('UsageProvider._checkUsageThresholds: Current foreground app: $foregroundApp');
+    
     for (final app in _monitoredApps.values) {
       try {
-        // 30% threshold
-        if (app.isAt30Percent && !app.notified30) {
-            debugPrint('UsageProvider: 30% threshold reached for ${app.packageName} (${app.cappedUsagePercentage.toStringAsFixed(1)}%)');
-          await _showUsageWarning(app, WarningLevel.thirtyPercent);
-          await _usageService.markAppState(app.packageName, notified30: true);
+        final percentage = app.cappedUsagePercentage;
+        debugPrint('UsageProvider: Checking ${app.packageName}: ${percentage.toStringAsFixed(1)}% (notified: 30=${app.notified30}, 60=${app.notified60}, 90=${app.notified90})');
+        
+        // Only show notifications if the monitored app is currently in foreground
+        final isAppInForeground = app.packageName == foregroundApp;
+        
+        if (!isAppInForeground) {
+          debugPrint('UsageProvider: ${app.packageName} not in foreground, skipping notification');
+          continue; // Skip this app if it's not in foreground
+        }
+        
+        // 90% threshold: show final warning (check first since it's highest priority)
+        if (percentage >= 90 && !app.notified90) {
+          debugPrint('UsageProvider: 90% threshold reached for ${app.packageName} (${percentage.toStringAsFixed(1)}%)');
+          await _showUsageWarning(app, WarningLevel.ninetyPercent);
+          await _usageService.markAppState(app.packageName, notified90: true);
           continue;
         }
 
         // 60% threshold
-        if (app.isAt60Percent && !app.notified60) {
-            debugPrint('UsageProvider: 60% threshold reached for ${app.packageName} (${app.cappedUsagePercentage.toStringAsFixed(1)}%)');
+        if (percentage >= 60 && !app.notified60) {
+          debugPrint('UsageProvider: 60% threshold reached for ${app.packageName} (${percentage.toStringAsFixed(1)}%)');
           await _showUsageWarning(app, WarningLevel.sixtyPercent);
           await _usageService.markAppState(app.packageName, notified60: true);
           continue;
         }
 
-        // 90% threshold: start countdown to lock and notify once
-        if (app.isAt90Percent && !app.notified90) {
-            debugPrint('UsageProvider: 90% threshold reached for ${app.packageName} (${app.cappedUsagePercentage.toStringAsFixed(1)}%) - starting countdown');
-          await _showUsageWarning(app, WarningLevel.ninetyPercent);
-          await _usageService.markAppState(app.packageName, notified90: true);
-
-          // Start a countdown equal to the remaining time until 100%.
-          final remaining = app.remainingTime;
-          // If there's no measurable remaining time, lock immediately.
-          _overlayService.startCountdown(remaining, app);
-          continue;
-        }
-
-        // 100% reached: lock the app if not already locked
-        if (app.isAt100Percent && !app.isLocked) {
-            debugPrint('UsageProvider: 100% reached for ${app.packageName} - locking app');
-          await _showAppLock(app);
-          await _usageService.markAppState(app.packageName,
-              isLocked: true, lockStartTime: DateTime.now());
+        // 30% threshold
+        if (percentage >= 30 && !app.notified30) {
+          debugPrint('UsageProvider: 30% threshold reached for ${app.packageName} (${percentage.toStringAsFixed(1)}%)');
+          await _showUsageWarning(app, WarningLevel.thirtyPercent);
+          await _usageService.markAppState(app.packageName, notified30: true);
           continue;
         }
       } catch (e) {
-          // avoid crashing the monitoring loop on one bad app
-          debugPrint('Error checking thresholds for ${app.packageName}: $e');
+        // avoid crashing the monitoring loop on one bad app
+        debugPrint('Error checking thresholds for ${app.packageName}: $e');
       }
     }
   }
 
   Future<void> _showUsageWarning(AppUsageModel app, WarningLevel level) async {
-    // Show overlay warning
-    await _overlayService.showUsageWarning(app, level);
-    
-    // Show notification
+    // Show notification only - overlays have been removed
     await _notificationService.showUsageWarningNotification(app, level);
-  }
-
-  Future<void> _showAppLock(AppUsageModel app) async {
-    // Show app lock overlay
-    await _overlayService.showAppLockOverlay(app);
-    
-    // Show notification
-    await _notificationService.showAppLockNotification(app);
   }
 
   List<AppUsageModel> getAppsAtThreshold(double threshold) {
@@ -352,8 +332,8 @@ class UsageProvider extends ChangeNotifier {
   @override
   void dispose() {
     _usageSubscription?.cancel();
+    _dailyResetTimer?.cancel();
     _usageService.dispose();
-    _overlayService.dispose();
     super.dispose();
   }
 }
