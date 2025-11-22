@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../models/chat_model.dart';
+import '../../services/gemini_service.dart' as gemini;
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -14,11 +15,13 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   ChatSession? _currentSession;
+  final gemini.GeminiService _geminiService = gemini.GeminiService();
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeChat();
+    // Chat initialization moved to build method for proper timing
   }
 
   @override
@@ -26,23 +29,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _initializeChat() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final user = userProvider.user;
-      
-      if (user != null) {
-        // Create or get existing chat session
-        final existingSessions = userProvider.getChatSessionsByCategory(ChatCategory.general);
-        if (existingSessions.isNotEmpty) {
-          _currentSession = existingSessions.first;
-        } else {
-          _createNewSession(userProvider, user.selectedAiAgent);
-        }
-      }
-    });
   }
 
   void _createNewSession(UserProvider userProvider, String aiAgent) {
@@ -66,18 +52,22 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     
     userProvider.addChatSession(session);
-    _currentSession = session;
+    setState(() {
+      _currentSession = session;
+    });
   }
 
   String _getGreetingMessage(String aiAgent) {
     if (aiAgent == 'Ade') {
       return AiAgent.ade.greeting;
-    } else {
+    } else if (aiAgent == 'Chidinma') {
       return AiAgent.shalewa.greeting;
+    } else {
+      return AiAgent.ade.greeting;
     }
   }
 
-  void _sendMessage() {
+  void _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty || _currentSession == null) return;
 
@@ -91,22 +81,25 @@ class _ChatScreenState extends State<ChatScreen> {
       type: MessageType.user,
     );
 
-    // Add AI response (mock for now)
-    final aiResponse = ChatMessage(
-      id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
-      content: _generateAiResponse(text, _currentSession!.aiAgentName),
+    // Add placeholder AI message that will be updated
+    final placeholderId = (DateTime.now().millisecondsSinceEpoch + 1).toString();
+    final placeholderResponse = ChatMessage(
+      id: placeholderId,
+      content: '...',
       timestamp: DateTime.now(),
       type: MessageType.ai,
       aiAgentName: _currentSession!.aiAgentName,
     );
 
-    final updatedMessages = [..._currentSession!.messages, userMessage, aiResponse];
-    final updatedSession = _currentSession!.copyWith(
+    // Update UI with user message and placeholder
+    var updatedMessages = [..._currentSession!.messages, userMessage, placeholderResponse];
+    var updatedSession = _currentSession!.copyWith(
       messages: updatedMessages,
       lastActivity: DateTime.now(),
     );
 
-    userProvider.updateChatSession(updatedSession);
+    // Don't update the provider yet - we'll do it after we get the response
+    // Just update the local state for UI purposes
     _currentSession = updatedSession;
     
     _messageController.clear();
@@ -121,29 +114,101 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     });
-  }
 
-  String _generateAiResponse(String userMessage, String aiAgent) {
-    // Mock AI responses - in real implementation, this would call an AI API
-    final responses = {
-      'Ade': [
-        "I understand how you're feeling. Let's work through this together.",
-        "That sounds challenging. Remember, it's okay to take breaks and prioritize your mental health.",
-        "I'm here to support you. What specific aspect of your digital wellness would you like to focus on?",
-        "It's great that you're being mindful about your technology use. Small changes can make a big difference.",
-        "Let's explore some mindfulness techniques that might help you feel more balanced.",
-      ],
-      'Chidinma': [
-        "Great question! Let me help you optimize your digital habits for better productivity.",
-        "I can see you're committed to improving your digital wellness. Here are some strategies that might help.",
-        "Let's break down your goals into manageable steps. What's your biggest challenge right now?",
-        "I recommend setting specific, achievable goals for your app usage. Would you like to start with one app?",
-        "Remember, digital wellness is about balance, not perfection. Let's find what works for you.",
-      ],
-    };
+    // Set loading state
+    setState(() {
+      _isLoading = true;
+    });
 
-    final agentResponses = responses[aiAgent] ?? responses['Ade']!;
-    return agentResponses[DateTime.now().millisecond % agentResponses.length];
+    try {
+      // Get agent personality
+      final agent = _currentSession!.aiAgentName == 'Ade' 
+          ? AiAgent.ade 
+          : AiAgent.shalewa;
+
+      // Convert chat history to Gemini format
+      // Build history from all previous messages (excluding the user message just sent)
+      // The history should be: greeting (skip), user1, model1, user2, model2, etc.
+      final historyMessages = _currentSession!.messages
+          .take(_currentSession!.messages.length - 1) // Exclude the placeholder AI response we just added
+          .toList();
+      
+      // Skip the greeting message (first message)
+      final messageHistory = historyMessages.isNotEmpty ? historyMessages.skip(1).toList() : [];
+      
+      final conversationHistory = messageHistory
+          .map((msg) => gemini.GeminiChatMessage(
+                content: msg.content,
+                role: msg.type == MessageType.user ? 'user' : 'model',
+              ))
+          .toList();
+
+      debugPrint('ChatScreen: Calling generateResponse. History: ${conversationHistory.length} messages');
+      
+      // Get AI response from Gemini
+      final aiResponseText = await _geminiService.generateResponse(
+        userMessage: text,
+        agentName: _currentSession!.aiAgentName,
+        agentPersonality: agent.personality,
+        conversationHistory: conversationHistory,
+      );
+      
+      debugPrint('ChatScreen: Got response from Gemini');
+
+      // Create actual AI response
+      final aiResponse = ChatMessage(
+        id: placeholderId,
+        content: aiResponseText,
+        timestamp: DateTime.now(),
+        type: MessageType.ai,
+        aiAgentName: _currentSession!.aiAgentName,
+      );
+
+      // Update with actual response - rebuild from scratch with all previous messages
+      final finalMessages = [
+        ..._currentSession!.messages.where((msg) => msg.id != userMessage.id && msg.id != placeholderId),
+        userMessage,
+        aiResponse,
+      ];
+      
+      final finalSession = _currentSession!.copyWith(
+        messages: finalMessages,
+        lastActivity: DateTime.now(),
+      );
+
+      if (mounted) {
+        userProvider.updateChatSession(finalSession);
+        _currentSession = finalSession;
+
+        // Scroll to bottom
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
+
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error getting AI response: $e');
+      
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+        );
+      }
+    }
   }
 
   @override
@@ -178,7 +243,25 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Consumer<UserProvider>(
         builder: (context, userProvider, child) {
+          // If user is not loaded, show loading
+          if (userProvider.user == null) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          // Initialize session if not yet done
           if (_currentSession == null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final existingSessions = userProvider.getChatSessionsByCategory(ChatCategory.general);
+              if (existingSessions.isNotEmpty) {
+                setState(() {
+                  _currentSession = existingSessions.first;
+                });
+              } else {
+                _createNewSession(userProvider, userProvider.user!.selectedAiAgent);
+              }
+            });
             return const Center(
               child: CircularProgressIndicator(),
             );
@@ -215,8 +298,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _messageController,
+                        enabled: !_isLoading,
                         decoration: InputDecoration(
-                          hintText: 'Type your message...',
+                          hintText: _isLoading ? 'Waiting for response...' : 'Type your message...',
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(24),
                           ),
@@ -226,13 +310,19 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                         ),
                         maxLines: null,
-                        onSubmitted: (_) => _sendMessage(),
+                        onSubmitted: (_) => _isLoading ? null : _sendMessage(),
                       ),
                     ),
                     const SizedBox(width: 8),
                     FloatingActionButton.small(
-                      onPressed: _sendMessage,
-                      child: const Icon(Icons.send),
+                      onPressed: _isLoading ? null : _sendMessage,
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send),
                     ),
                   ],
                 ),

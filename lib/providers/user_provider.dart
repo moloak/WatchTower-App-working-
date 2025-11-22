@@ -65,12 +65,16 @@ class UserProvider extends ChangeNotifier {
           hasCompletedOnboarding: true,
         );
         _user = userModel;
-        await FirebaseFirestore.instance.collection('users').doc(fbUser.uid).set(userModel.toJson());
+        final userJson = userModel.toJson();
+        // Add userId field for Firestore security rules
+        userJson['userId'] = fbUser.uid;
+        await FirebaseFirestore.instance.collection('users').doc(fbUser.uid).set(userJson);
         await _saveUserData();
         notifyListeners();
       }
     } catch (e) {
       debugPrint('Error syncing firebase user: $e');
+      rethrow;
     }
   }
 
@@ -140,7 +144,10 @@ class UserProvider extends ChangeNotifier {
       );
 
       _user = userModel;
-      await FirebaseFirestore.instance.collection('users').doc(fbUser.uid).set(userModel.toJson());
+      final userJson = userModel.toJson();
+      // Add userId field for Firestore security rules
+      userJson['userId'] = fbUser.uid;
+      await FirebaseFirestore.instance.collection('users').doc(fbUser.uid).set(userJson);
       // mark email_verified false until user clicks verification link
       await FirebaseFirestore.instance.collection('users').doc(fbUser.uid).update({'email_verified': false});
       // Trigger Firebase Auth email verification link (use resend helper)

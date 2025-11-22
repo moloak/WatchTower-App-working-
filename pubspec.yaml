@@ -51,6 +51,7 @@ dependencies:
 
   # HTTP and API
   http: ^1.2.2
+  google_generative_ai: ^0.4.7
 
   # Authentication and Security
   firebase_auth: ^4.17.8
