@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'dart:io';
+import 'dart:async';
 
 /// A constant holding the Gemini API key.
 /// **Warning**: For production apps, it's strongly recommended to use environment variables
 /// or a secure secret management service instead of hardcoding the key. 
 /// You can use flutter_dotenv for this. For now, replace the placeholder with your real key.
-const String _apiKey = 'AIzaSyBTiI_wEMxGyIJuXPxH4qo4fTuxOdZ2wV8';
+const String _apiKey = 'AIzaSyB-VK-6h4VlXxQAnLOlgjJetvH1WHvN4_s';
 
 /// Service for interacting with Google Gemini API
 /// Provides personality-based responses for Ade and Chidinma agents
@@ -26,6 +27,18 @@ class GeminiService {
       debugPrint('GeminiService: Using API Key.');
     } else {
       debugPrint('GeminiService: Invalid or missing API Key. Calls will likely fail.');
+      return _getDefaultResponse(agentName, isError: true);
+    }
+
+    // Check network connectivity first
+    try {
+      await InternetAddress.lookup('generativelanguage.googleapis.com').timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => throw TimeoutException('DNS lookup timeout'),
+      );
+      debugPrint('✓ Network connectivity verified');
+    } catch (e) {
+      debugPrint('✗ No internet connection or DNS lookup failed: $e');
       return _getDefaultResponse(agentName, isError: true);
     }
 
@@ -66,9 +79,16 @@ class GeminiService {
       try {
         response = await chat.sendMessage(
           Content.text(fullMessage),
+        ).timeout(
+          const Duration(seconds: 30),
+          onTimeout: () {
+            throw TimeoutException('Gemini API request timed out after 30 seconds');
+          },
         );
       } catch (apiError) {
         debugPrint('❌ API call failed immediately: $apiError');
+        debugPrint('API Error type: ${apiError.runtimeType}');
+        debugPrint('API Error details: ${apiError.toString()}');
         rethrow;
       }
 

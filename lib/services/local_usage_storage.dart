@@ -106,6 +106,16 @@ class LocalUsageStorage {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getDailyUsageForDate(String date) async {
+    if (_db == null) await init();
+    final rows = await _db!.query(
+      'daily_usage',
+      where: 'date = ?',
+      whereArgs: [date],
+    );
+    return rows.cast<Map<String, dynamic>>();
+  }
+
   Future<Map<String, int>> getWeeklyAggregate(DateTime weekStart) async {
     if (_db == null) await init();
     final start = DateTime(weekStart.year, weekStart.month, weekStart.day);

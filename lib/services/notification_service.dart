@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_usage_model.dart';
 import '../models/user_model.dart';
 import 'overlay_service.dart';
@@ -59,6 +60,22 @@ class NotificationService {
     final title = _getWarningTitle(level);
     final body = _getWarningBody(app, level);
     final id = _getNotificationId(app.packageName, level);
+    final expandedBody = _getExpandedWarningBody(app, level);
+
+    // Create action buttons for user interaction
+    final actions = <AndroidNotificationAction>[
+      AndroidNotificationAction(
+        'view_details_$id',
+        'View Details',
+        showsUserInterface: true,
+        cancelNotification: false,
+      ),
+      AndroidNotificationAction(
+        'dismiss_$id',
+        'Dismiss',
+        cancelNotification: true,
+      ),
+    ];
 
     // Configure Android notification to show on top of other apps with full screen intent
     // This ensures the notification appears as a heads-up notification even when another app is in foreground
@@ -74,10 +91,28 @@ class NotificationService {
       enableLights: true,
       color: Colors.deepOrange,
       onlyAlertOnce: false,
+      tag: 'usage_warning_${app.packageName}',
+      groupKey: 'usage_warnings',
+      setAsGroupSummary: false,
+      timeoutAfter: 5000, // Auto-dismiss after 5 seconds (5000ms)
+      actions: actions,
+      styleInformation: BigTextStyleInformation(
+        expandedBody,
+        contentTitle: title,
+        htmlFormatContentTitle: false,
+        htmlFormatBigText: false,
+        summaryText: '${app.appName} - Usage Alert',
+      ),
     );
 
     debugPrint('NotificationService: Showing heads-up notification for ${app.packageName} - $title: $body');
     await _notifications.show(id, title, body, NotificationDetails(android: androidDetails));
+    
+    // Schedule automatic dismissal after 5 seconds as fallback for some devices
+    Future.delayed(const Duration(seconds: 5), () {
+      cancelNotification(id);
+      debugPrint('NotificationService: Auto-dismissed notification after 5 seconds: $id');
+    });
   }
 
   Future<void> showAppLockNotification(AppUsageModel app) async {
@@ -218,6 +253,39 @@ class NotificationService {
     }
   }
 
+  String _getExpandedWarningBody(AppUsageModel app, WarningLevel level) {
+    final remainingTime = app.remainingTime;
+    final hours = remainingTime.inHours;
+    final minutes = remainingTime.inMinutes % 60;
+    final usedTime = app.currentUsage;
+    final usedHours = usedTime.inHours;
+    final usedMinutes = usedTime.inMinutes % 60;
+    final dailyLimit = app.dailyLimit;
+    final dailyHours = dailyLimit.inHours;
+    final dailyMinutes = dailyLimit.inMinutes % 60;
+    final percentage = app.cappedUsagePercentage.toStringAsFixed(1);
+
+    String levelDesc;
+    switch (level) {
+      case WarningLevel.thirtyPercent:
+        levelDesc = '30% Warning';
+        break;
+      case WarningLevel.sixtyPercent:
+        levelDesc = '60% Warning';
+        break;
+      case WarningLevel.ninetyPercent:
+        levelDesc = 'Final Warning (90%)';
+        break;
+    }
+
+    return 'App: ${app.appName}\n'
+        'Status: $levelDesc\n'
+        'Current Usage: ${usedHours}h ${usedMinutes}m ($percentage%)\n'
+        'Daily Limit: ${dailyHours}h ${dailyMinutes}m\n'
+        'Time Remaining: ${hours}h ${minutes}m\n'
+        'Tap \'View Details\' to see full information';
+  }
+
   int _getNotificationId(String packageName, WarningLevel level) {
     final packageHash = packageName.hashCode;
     final levelValue = level.index;
@@ -227,6 +295,24 @@ class NotificationService {
   void _onNotificationTapped(NotificationResponse response) {
     // Handle notification tap
   debugPrint('Notification tapped: ${response.payload}');
+  }
+
+  /// Clear notification state when user resets time for an app
+  /// This ensures only the next applicable threshold notification will be triggered
+  Future<void> clearNotificationState(String packageName, {String? dateStr}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final date = dateStr ?? DateTime.now().toString().split(' ')[0];
+      
+      // Clear all threshold notification flags for this app on this date
+      await prefs.remove('notified_30_${packageName}_$date');
+      await prefs.remove('notified_60_${packageName}_$date');
+      await prefs.remove('notified_90_${packageName}_$date');
+      
+      debugPrint('NotificationService: Cleared notification state for $packageName on $date');
+    } catch (e) {
+      debugPrint('Error clearing notification state: $e');
+    }
   }
 }
 

@@ -129,19 +129,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
-  Widget _planTile(String id, String title, String subtitle, String desc) {
-    final selected = _selectedPlan == id;
-    return ListTile(
-      selected: selected,
-      tileColor: selected ? Colors.orange.shade50 : null,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      onTap: () => setState(() => _selectedPlan = id),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: selected ? const Icon(Icons.check_circle, color: Colors.orange) : null,
-    );
-  }
-
   Future<void> _startCheckout(UserProvider userProv, BuildContext ctx) async {
     if (_selectedPlan == null) return;
     setState(() => _loading = true);

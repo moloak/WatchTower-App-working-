@@ -197,18 +197,37 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
       debugPrint('Error getting AI response: $e');
+      debugPrint('Error type: ${e.runtimeType}');
       
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
 
-        // Show error message
+        // Show more informative error message
+        final errorMessage = _getErrorMessage(e);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(
+            content: Text(errorMessage),
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
+  }
+
+  String _getErrorMessage(dynamic error) {
+    final errorStr = error.toString().toLowerCase();
+    if (errorStr.contains('network') || errorStr.contains('socket') || errorStr.contains('connection')) {
+      return 'Network error: Please check your internet connection';
+    } else if (errorStr.contains('timeout')) {
+      return 'Request timed out: The server took too long to respond';
+    } else if (errorStr.contains('api key') || errorStr.contains('permission') || errorStr.contains('forbidden')) {
+      return 'API configuration error: Please check with support';
+    } else if (errorStr.contains('dns')) {
+      return 'DNS error: Cannot reach the API server';
+    }
+    return 'Error: ${error.toString()}';
   }
 
   @override

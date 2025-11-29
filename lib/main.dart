@@ -11,6 +11,7 @@ import 'screens/auth/auth_screen.dart';
 // import 'screens/auth/password_reset_confirm_screen.dart';
 import 'screens/main/main_navigation.dart';
 import 'services/notification_service.dart';
+import 'services/background_service.dart';
 // Unused services removed: app_usage_service, overlay_service
 import 'utils/theme.dart';
 
@@ -31,6 +32,14 @@ void main() async {
   } catch (e, st) {
     // ignore: avoid_print
     debugPrint('NotificationService initialization failed: $e\n$st');
+  }
+
+  // Initialize background service for threshold monitoring even when app is closed
+  try {
+    await BackgroundService().initialize();
+  } catch (e, st) {
+    // ignore: avoid_print
+    debugPrint('BackgroundService initialization failed: $e\n$st');
   }
 
   runApp(const WatchtowerApp());

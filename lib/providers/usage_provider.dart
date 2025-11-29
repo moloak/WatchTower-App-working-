@@ -229,22 +229,10 @@ class UsageProvider extends ChangeNotifier {
   // debug helper removed
 
   Future<void> _checkUsageThresholds() async {
-    // Get the currently foreground app
-    final foregroundApp = await _usageService.getCurrentForegroundApp();
-    debugPrint('UsageProvider._checkUsageThresholds: Current foreground app: $foregroundApp');
-    
     for (final app in _monitoredApps.values) {
       try {
         final percentage = app.cappedUsagePercentage;
         debugPrint('UsageProvider: Checking ${app.packageName}: ${percentage.toStringAsFixed(1)}% (notified: 30=${app.notified30}, 60=${app.notified60}, 90=${app.notified90})');
-        
-        // Only show notifications if the monitored app is currently in foreground
-        final isAppInForeground = app.packageName == foregroundApp;
-        
-        if (!isAppInForeground) {
-          debugPrint('UsageProvider: ${app.packageName} not in foreground, skipping notification');
-          continue; // Skip this app if it's not in foreground
-        }
         
         // 90% threshold: show final warning (check first since it's highest priority)
         if (percentage >= 90 && !app.notified90) {

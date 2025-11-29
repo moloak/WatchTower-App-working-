@@ -13,7 +13,7 @@ The WatchTower app now features **two AI-powered agents** powered by Google Gemi
 ## What Was Delivered
 
 ### 1. Core Service (`lib/services/gemini_service.dart`)
-- ✅ Gemini API integration with `gemini-1.5-flash` model
+- ✅ Gemini API integration with `gemini-2.5-flash` model
 - ✅ Personality-based response generation
 - ✅ Conversation history context management
 - ✅ Error handling with personality-appropriate fallback responses
@@ -49,7 +49,7 @@ The WatchTower app now features **two AI-powered agents** powered by Google Gemi
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| Gemini API Integration | ✅ | Using gemini-1.5-flash model |
+| Gemini API Integration | ✅ | Using gemini-2.5-flash model |
 | Ade Agent | ✅ | Warm, empathetic personality |
 | Chidinma Agent | ✅ | Motivational, practical personality |
 | Conversation Context | ✅ | Full history maintained |
@@ -61,7 +61,7 @@ The WatchTower app now features **two AI-powered agents** powered by Google Gemi
 ## API Configuration
 
 - **API Key**: `AIzaSyBTiI_wEMxGyIJuXPxH4qo4fTuxOdZ2wV8`
-- **Model**: `gemini-1.5-flash`
+- **Model**: `gemini-2.5-flash`
 - **Location**: `lib/services/gemini_service.dart`
 - **Status**: ✅ Ready for testing
 
@@ -123,7 +123,7 @@ flutter run
 ## Performance Expectations
 
 - **Response Time**: 500-2000ms average
-- **Model**: Optimized for speed (gemini-1.5-flash)
+- **Model**: Optimized for speed (gemini-2.5-flash)
 - **Reliability**: Graceful degradation on errors
 - **Load**: Handles rapid message sends
 
