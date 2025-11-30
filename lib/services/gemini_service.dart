@@ -1,13 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:io';
 import 'dart:async';
 
-/// A constant holding the Gemini API key.
-/// **Warning**: For production apps, it's strongly recommended to use environment variables
-/// or a secure secret management service instead of hardcoding the key. 
-/// You can use flutter_dotenv for this. For now, replace the placeholder with your real key.
-const String _apiKey = 'AIzaSyB-VK-6h4VlXxQAnLOlgjJetvH1WHvN4_s';
+/// A getter that retrieves the Gemini API key from environment variables.
+/// **Security**: The API key is now loaded from the .env file instead of being hardcoded.
+/// This is the recommended approach for production applications.
+String get _apiKey => dotenv.env['GEMINI_API_KEY'] ?? '';
 
 /// Service for interacting with Google Gemini API
 /// Provides personality-based responses for Ade and Chidinma agents

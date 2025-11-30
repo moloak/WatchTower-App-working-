@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'providers/app_state_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/usage_provider.dart';
@@ -17,7 +18,15 @@ import 'utils/theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Load environment variables from .env file
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    // ignore: avoid_print
+    debugPrint('Failed to load .env file: $e');
+  }
+
   // Initialize Firebase and services, but don't crash the app if they fail during local/dev runs
   try {
     await Firebase.initializeApp();
@@ -25,9 +34,7 @@ void main() async {
     // Log and continue; Firebase may not be available in local/test environments
     // ignore: avoid_print
     debugPrint('Firebase initialization failed: $e\n$st');
-  }
-
-  try {
+  }  try {
     await NotificationService().initialize();
   } catch (e, st) {
     // ignore: avoid_print

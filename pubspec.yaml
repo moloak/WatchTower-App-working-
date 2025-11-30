@@ -52,6 +52,7 @@ dependencies:
   # HTTP and API
   http: ^1.2.2
   google_generative_ai: ^0.4.7
+  flutter_dotenv: ^5.1.0
 
   # Authentication and Security
   firebase_auth: ^4.17.8
@@ -100,7 +101,8 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   # assets:
   assets:
-  - assets/images/watchtower.png
+    - assets/images/watchtower.png
+    - .env
 
 # Configuration for flutter_launcher_icons. After you've copied the
 # source image into `assets/images/watchtower.png` you can generate
