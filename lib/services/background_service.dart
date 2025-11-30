@@ -204,6 +204,11 @@ class BackgroundService {
         initialDelay: const Duration(minutes: 1),
       );
 
+      // Immediately check thresholds on startup to catch any notifications missed
+      // if the app hasn't been opened since the last threshold was reached
+      debugPrint('[BackgroundService] Running immediate threshold check on startup');
+      await _handleThresholdCheck();
+
       debugPrint('[BackgroundService] Successfully initialized all background tasks');
     } catch (e) {
       // ignore: avoid_print

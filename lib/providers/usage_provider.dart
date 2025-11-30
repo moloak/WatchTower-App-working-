@@ -61,6 +61,11 @@ class UsageProvider extends ChangeNotifier {
 
     if (_hasPermissions) {
       await startMonitoring();
+      
+      // Immediately check thresholds when app opens to catch any notifications
+      // that should have been shown while the app was closed
+      debugPrint('UsageProvider: Running immediate threshold check on app startup');
+      await _checkUsageThresholds();
     }
     
     _usageSubscription = _usageService.usageStream.listen((apps) async {
@@ -233,6 +238,20 @@ class UsageProvider extends ChangeNotifier {
       try {
         final percentage = app.cappedUsagePercentage;
         debugPrint('UsageProvider: Checking ${app.packageName}: ${percentage.toStringAsFixed(1)}% (notified: 30=${app.notified30}, 60=${app.notified60}, 90=${app.notified90})');
+        
+        // Reset flags when usage drops below thresholds (to allow re-triggering when usage increases again)
+        if (percentage < 30 && app.notified30) {
+          debugPrint('UsageProvider: Usage for ${app.packageName} dropped below 30%, resetting notification flag');
+          await _usageService.markAppState(app.packageName, notified30: false);
+        }
+        if (percentage < 60 && app.notified60) {
+          debugPrint('UsageProvider: Usage for ${app.packageName} dropped below 60%, resetting notification flag');
+          await _usageService.markAppState(app.packageName, notified60: false);
+        }
+        if (percentage < 90 && app.notified90) {
+          debugPrint('UsageProvider: Usage for ${app.packageName} dropped below 90%, resetting notification flag');
+          await _usageService.markAppState(app.packageName, notified90: false);
+        }
         
         // 90% threshold: show final warning (check first since it's highest priority)
         if (percentage >= 90 && !app.notified90) {

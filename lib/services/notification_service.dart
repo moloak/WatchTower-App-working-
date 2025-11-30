@@ -94,7 +94,7 @@ class NotificationService {
       tag: 'usage_warning_${app.packageName}',
       groupKey: 'usage_warnings',
       setAsGroupSummary: false,
-      timeoutAfter: 5000, // Auto-dismiss after 5 seconds (5000ms)
+      timeoutAfter: 10000, // Auto-dismiss after 10 seconds (10000ms)
       actions: actions,
       styleInformation: BigTextStyleInformation(
         expandedBody,
@@ -108,10 +108,10 @@ class NotificationService {
     debugPrint('NotificationService: Showing heads-up notification for ${app.packageName} - $title: $body');
     await _notifications.show(id, title, body, NotificationDetails(android: androidDetails));
     
-    // Schedule automatic dismissal after 5 seconds as fallback for some devices
-    Future.delayed(const Duration(seconds: 5), () {
+    // Schedule automatic dismissal after 10 seconds as fallback for some devices
+    Future.delayed(const Duration(seconds: 10), () {
       cancelNotification(id);
-      debugPrint('NotificationService: Auto-dismissed notification after 5 seconds: $id');
+      debugPrint('NotificationService: Auto-dismissed notification after 10 seconds: $id');
     });
   }
 

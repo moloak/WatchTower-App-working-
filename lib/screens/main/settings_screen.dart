@@ -109,12 +109,6 @@ class SettingsScreen extends StatelessWidget {
                 title: 'Data Management',
                 children: [
                   _buildListTile(
-                    title: 'Reset Daily Usage',
-                    subtitle: 'Clear today\'s usage data',
-                    leading: Icons.refresh,
-                    onTap: () => _showResetDialog(context, usageProvider),
-                  ),
-                  _buildListTile(
                     title: 'Export Data',
                     subtitle: 'Download your usage data',
                     leading: Icons.download,
@@ -374,35 +368,6 @@ class SettingsScreen extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showResetDialog(BuildContext context, UsageProvider usageProvider) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reset Daily Usage'),
-        content: const Text('This will clear all usage data for today. This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              usageProvider.resetDailyUsage();
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Daily usage data reset successfully'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: const Text('Reset'),
-          ),
-        ],
       ),
     );
   }

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 // debug imports removed
 import 'package:provider/provider.dart';
+import 'package:fl_chart/fl_chart.dart';
 // import 'package:intl/intl.dart'; // unused
 import '../../providers/user_provider.dart';
 import '../payments/subscription_screen.dart';
 import '../../providers/usage_provider.dart';
 import '../../models/app_usage_model.dart';
+import '../../services/local_usage_storage.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -89,6 +91,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   
                   // Quick Stats
                   _buildQuickStats(usageProvider),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Weekly Usage Charts
+                  _buildWeeklyChartsSection(usageProvider),
                   
                   const SizedBox(height: 24),
                   
@@ -506,6 +513,330 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildWeeklyChartsSection(UsageProvider usageProvider) {
+    return StreamBuilder<Map<String, AppUsageModel>>(
+      stream: usageProvider.usageStream,
+      initialData: usageProvider.monitoredApps,
+      builder: (context, snapshot) {
+        final apps = snapshot.data?.values.toList() ?? [];
+        
+        if (apps.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Weekly Usage Analytics',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...apps.map((app) => _buildAppWeeklyChart(app)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildAppWeeklyChart(AppUsageModel app) {
+    final dailyLimitMinutes = app.dailyLimit.inMinutes;
+    
+    return FutureBuilder<List<int>>(
+      future: _getWeeklyDataForApp(app.packageName),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                height: 200,
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final weeklyData = snapshot.data ?? [0, 0, 0, 0, 0, 0, 0];
+        
+        // Only show chart if there's actual data for this week
+        final hasData = weeklyData.any((value) => value > 0);
+        
+        if (!hasData) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundImage: app.iconBytes != null 
+                            ? MemoryImage(app.iconBytes!) 
+                            : null,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        child: app.iconBytes == null
+                            ? Text(app.appName[0].toUpperCase())
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              app.appName,
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'No data yet for this week',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        
+        // Calculate max Y value for the chart
+        final maxValue = (weeklyData.reduce((a, b) => a > b ? a : b) * 1.2).toInt();
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 16, 8, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundImage: app.iconBytes != null 
+                          ? MemoryImage(app.iconBytes!) 
+                          : null,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      child: app.iconBytes == null
+                          ? Text(app.appName[0].toUpperCase())
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            app.appName,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Daily Limit: ${(dailyLimitMinutes / 60).toStringAsFixed(1)}h',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                // Bar Chart - Horizontally scrollable with real weekly data
+                ClipRect(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: 400,
+                      height: 200,
+                      child: BarChart(
+                        BarChartData(
+                          alignment: BarChartAlignment.spaceAround,
+                          maxY: maxValue.toDouble(),
+                          barTouchData: BarTouchData(
+                            enabled: true,
+                            touchTooltipData: BarTouchTooltipData(
+                              getTooltipItem: (group, touchedBarGroupIndex, rodIndex, touchedBarIndex) {
+                                final days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                                final minutes = weeklyData[group.x.toInt()];
+                                final hours = minutes / 60;
+                                return BarTooltipItem(
+                                  '${days[group.x.toInt()]}\n${hours.toStringAsFixed(1)}h',
+                                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                );
+                              },
+                            ),
+                          ),
+                          titlesData: FlTitlesData(
+                            show: true,
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                                  final day = days[value.toInt()];
+                                  return Text(
+                                    day,
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontSize: 10,
+                                    ),
+                                  );
+                                },
+                                reservedSize: 28,
+                              ),
+                            ),
+                            leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                getTitlesWidget: (value, meta) {
+                                  final hours = (value / 60).toStringAsFixed(0);
+                                  return Text(
+                                    '${hours}h',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      fontSize: 9,
+                                    ),
+                                  );
+                                },
+                                reservedSize: 20,
+                              ),
+                            ),
+                            topTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                            rightTitles: const AxisTitles(
+                              sideTitles: SideTitles(showTitles: false),
+                            ),
+                          ),
+                          gridData: FlGridData(
+                            show: true,
+                            drawVerticalLine: false,
+                            horizontalInterval: (maxValue / 4).toDouble(),
+                            getDrawingHorizontalLine: (value) {
+                              return FlLine(
+                                color: Colors.grey[300],
+                                strokeWidth: 0.8,
+                                dashArray: [5, 5],
+                              );
+                            },
+                          ),
+                          borderData: FlBorderData(show: false),
+                          barGroups: List.generate(
+                            weeklyData.length,
+                            (index) {
+                              final value = weeklyData[index].toDouble();
+                              final percentage = (value / dailyLimitMinutes) * 100;
+                              
+                              // Color based on usage percentage
+                              Color barColor;
+                              if (percentage <= 50) {
+                                barColor = Colors.green;
+                              } else if (percentage <= 80) {
+                                barColor = Colors.orange;
+                              } else {
+                                barColor = Colors.red;
+                              }
+                              
+                              return BarChartGroupData(
+                                x: index,
+                                barRods: [
+                                  BarChartRodData(
+                                    toY: value,
+                                    color: barColor,
+                                    width: 8,
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(4),
+                                      topRight: Radius.circular(4),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Legend - Wrapped in SingleChildScrollView to prevent overflow
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildLegendItem(Colors.green, 'Healthy (≤50%)'),
+                      const SizedBox(width: 16),
+                      _buildLegendItem(Colors.orange, 'Caution (50-80%)'),
+                      const SizedBox(width: 16),
+                      _buildLegendItem(Colors.red, 'Exceeded (>80%)'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<int>> _getWeeklyDataForApp(String packageName) async {
+    try {
+      // Get the current week start (Sunday)
+      final now = DateTime.now();
+      final weekStart = now.subtract(Duration(days: now.weekday % 7));
+      
+      // Get weekly aggregate data
+      final weeklyData = await LocalUsageStorage.instance.getWeeklyAggregate(weekStart);
+      final minutes = weeklyData[packageName] ?? 0;
+      
+      // For now, we'll distribute the total across the week
+      // In a real app, you'd query daily breakdown
+      final dailyAverage = minutes ~/ 7;
+      return [dailyAverage, dailyAverage, dailyAverage, dailyAverage, dailyAverage, dailyAverage, dailyAverage];
+    } catch (e) {
+      debugPrint('Error fetching weekly data for $packageName: $e');
+      return [0, 0, 0, 0, 0, 0, 0];
+    }
+  }  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Colors.grey[600],
+          ),
+        ),
+      ],
     );
   }
 

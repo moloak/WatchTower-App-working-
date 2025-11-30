@@ -5,6 +5,7 @@ import 'package:usage_stats/usage_stats.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/foundation.dart';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_usage_model.dart';
 import 'local_usage_storage.dart';
 // Use installed_apps for Android installed-app enumeration
@@ -328,6 +329,8 @@ class AppUsageService {
   }
 
   Future<void> resetDailyUsage() async {
+    debugPrint('[AppUsageService] Resetting daily usage and notification flags for all monitored apps');
+    
     for (final packageName in _monitoredApps.keys) {
       final app = _monitoredApps[packageName]!;
       _monitoredApps[packageName] = app.copyWith(
@@ -338,8 +341,32 @@ class AppUsageService {
         notified60: false,
         notified90: false,
       );
+      debugPrint('[AppUsageService] Reset flags for $packageName - ready for new threshold notifications');
     }
+    
+    // Also clear old notification keys from SharedPreferences to keep it clean
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      final now = DateTime.now();
+      final dateStr = _formatDate(now);
+      
+      // Remove yesterday's notification flags to keep SharedPreferences clean
+      for (final key in keys) {
+        if (key.startsWith('notified_') && !key.endsWith(dateStr)) {
+          await prefs.remove(key);
+          debugPrint('[AppUsageService] Cleaned old notification key: $key');
+        }
+      }
+    } catch (e) {
+      debugPrint('[AppUsageService] Error cleaning notification keys: $e');
+    }
+    
     _usageController.add(_monitoredApps);
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
   /// Get the package name of the app currently in foreground
